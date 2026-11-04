@@ -118,7 +118,8 @@ async function makeDraw(){
    return `<div class="linkrow" style="animation-delay:${Math.min(i*45,650)}ms"><b>${esc(p.name)}</b><input readonly value="${esc(url)}" id="link${i}"><button onclick="copyLink(${i})">Copy</button></div>`;
  }).join('');
  rolling.textContent='✨ The draw is complete!';
- document.getElementById('results').style.display='block';\n saveResultsToSheet();
+ document.getElementById('results').style.display='block';
+ saveResultsToSheet();
  button.disabled=false;
  document.getElementById('results').scrollIntoView({behavior:'smooth'});
 }
