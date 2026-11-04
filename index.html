@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secret Christmas Roulette</title>
+<style>
+:root{--red:#a52e36;--green:#176344;--gold:#d6a94b;--ink:#26352d}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:28px 14px;background:linear-gradient(145deg,#f6f1e6,#e7efe8);color:var(--ink);font-family:Georgia,serif;display:flex;justify-content:center;align-items:flex-start}
+main{width:100%;max-width:680px;background:#fffdf8;border:1px solid #e5dccb;border-radius:22px;padding:clamp(20px,5vw,36px);box-shadow:0 16px 45px #24382b18}
+header{text-align:center;margin-bottom:24px}.icon{font-size:34px}h1{color:var(--red);font-size:clamp(27px,5vw,38px);margin:8px 0}.sub{font:14px/1.6 Arial,sans-serif;color:#65736a}
+h2{font-size:20px;color:var(--green);margin:24px 0 10px}textarea{width:100%;min-height:260px;padding:14px;border:1px solid #d7cebf;border-radius:12px;font:15px/1.7 Arial,sans-serif;resize:vertical}
+button{border:0;border-radius:10px;padding:14px 18px;background:var(--green);color:white;font:600 15px Arial,sans-serif;cursor:pointer}button.secondary{background:#756b5d}button:disabled{opacity:.5}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.hint{font:12px/1.6 Arial,sans-serif;color:#69756e;margin-top:10px}.notice{background:#f8f1df;border-left:4px solid var(--gold);padding:12px;border-radius:8px;font:13px/1.6 Arial,sans-serif;margin-top:18px}
+#results{display:none;margin-top:24px;border-top:1px solid #e8dfd2;padding-top:18px}.links{display:grid;gap:9px}.linkrow{display:grid;grid-template-columns:120px 1fr auto;align-items:center;gap:8px;background:#f4f5ef;padding:10px;border-radius:9px;font:13px Arial,sans-serif}.linkrow input{width:100%;min-width:0;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:12px}
+#error{display:none;color:#9b2525;background:#fff0ef;padding:11px;border-radius:8px;font:13px Arial,sans-serif;margin-top:12px}
+.result{display:none;text-align:center;padding:28px 12px}.result .to{font-size:clamp(30px,8vw,44px);color:var(--red);margin:18px 0}.result p{font:14px/1.6 Arial,sans-serif;color:#65736a}
+footer{text-align:center;margin-top:24px;font:11px Arial,sans-serif;color:#8b928c}
+@media(max-width:520px){.linkrow{grid-template-columns:1fr}.linkrow input{font-size:11px}}
+</style>
+</head>
+<body>
+<main>
+<header><div class="icon">🎄 ✨ 🎁</div><h1>Secret Christmas Roulette</h1><div class="sub">A little mystery makes Christmas more fun.</div></header>
+
+<section id="organizer">
+<h2>Organizer: Create the draw</h2>
+<div class="sub">One participant per line. Every person will get one different recipient, and nobody will draw themselves.</div>
+<textarea id="names">Jessa
+Josel
+Kendra
+Alice
+Asil
+Bea
+Maricar
+Czarina
+Ms Ow
+Irine
+Jaja
+Jolina
+May Ann
+Noezel
+Sep
+She
+Jafar</textarea>
+<div class="actions"><button onclick="makeDraw()">Generate private links</button><button class="secondary" onclick="resetDraw()">Reset</button></div>
+<div id="error"></div>
+<div id="results"><h2>Share each person’s link privately</h2><p class="hint">Copy each link and send it only to the matching participant.</p><div id="links" class="links"></div><div class="actions"><button onclick="downloadCSV()">Download links as CSV</button></div></div>
+<div class="notice"><b>Important privacy note:</b> This is a no-backend, static website. Each link contains only that person's recipient, so don't post the links in a group chat. Anyone who receives or forwards a link can see that assignment. The draw is generated in your browser; no participant database or reveal tracking is stored.</div>
+</section>
+
+<section id="reveal" class="result">
+<div class="icon">🎁</div><h1>Your Secret Santa recipient is…</h1><div class="to" id="recipient"></div><p>Keep it secret! Don't share this page or screenshot with the group. 🤫</p>
+</section>
+<footer>Made for a merry little gift exchange ❤️</footer>
+</main>
+<script>
+let generated=[];
+function encode(s){return btoa(unescape(encodeURIComponent(s)));}
+function decode(s){return decodeURIComponent(escape(atob(s)));}
+function showError(msg){const e=document.getElementById('error');e.textContent=msg;e.style.display='block';}
+function makeDraw(){
+ const e=document.getElementById('error');e.style.display='none';
+ const names=document.getElementById('names').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const normalized=names.map(x=>x.toLocaleLowerCase());
+ if(names.length<2){showError('Enter at least two participants.');return;}
+ if(new Set(normalized).size!==names.length){showError('Participant names must be unique. Check for duplicates.');return;}
+ // Sattolo shuffle produces one cycle: no self-matches and each recipient appears exactly once.
+ const recipients=names.slice();
+ for(let i=recipients.length-1;i>0;i--){const j=Math.floor(Math.random()*i);[recipients[i],recipients[j]]=[recipients[j],recipients[i]];}
+ generated=names.map((name,i)=>({name,recipient:recipients[i]}));
+ const base=location.href.split('#')[0];
+ document.getElementById('links').innerHTML=generated.map((p,i)=>{
+   const url=base+'#gift='+encode(p.recipient);
+   return `<div class="linkrow"><b>${esc(p.name)}</b><input readonly value="${esc(url)}" id="link${i}"><button onclick="copyLink(${i})">Copy</button></div>`;
+ }).join('');
+ document.getElementById('results').style.display='block';
+ document.getElementById('results').scrollIntoView({behavior:'smooth'});
+}
+function copyLink(i){const el=document.getElementById('link'+i);el.select();el.setSelectionRange(0,99999);navigator.clipboard?.writeText(el.value).then(()=>alert('Link copied for '+generated[i].name)).catch(()=>alert('Select and copy the link manually.'));}
+function downloadCSV(){
+ const rows=[['Participant','Private link'],...generated.map(p=>[p.name,location.href.split('#')[0]+'#gift='+encode(p.recipient)])];
+ const csv=rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='secret-santa-private-links.csv';a.click();URL.revokeObjectURL(a.href);
+}
+function resetDraw(){generated=[];document.getElementById('results').style.display='none';document.getElementById('error').style.display='none';}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+(function(){
+ const m=location.hash.match(/^#gift=(.+)$/);
+ if(m){try{const who=decode(m[1]);document.getElementById('organizer').style.display='none';document.getElementById('reveal').style.display='block';document.getElementById('recipient').textContent=who;}catch(e){showError('This reveal link is invalid. Ask the organizer for a new link.');}}
+})();
+</script>
+</body></html>
