@@ -56,14 +56,7 @@ Noezel
 Sep
 She
 Jafar</textarea>
-<div class="notice" style="margin-top:14px">
-<b>Organizer-only results backup</b><br>
-<label style="display:block;margin-top:10px;font:13px Arial,sans-serif">Google Apps Script Web App URL</label>
-<input id="sheetEndpoint" type="url" value="https://script.google.com/macros/s/AKfycbx6-sDoLsfpsJd7_rKfUpfpESP_DV4_DRR8qCJG4BLiEl6lTsejUxmjIsY0ubOntYe78A/exec" placeholder="Paste your Apps Script Web App URL" style="width:100%;padding:11px;border:1px solid #d7cebf;border-radius:8px;margin-top:5px">
-<label style="display:block;margin-top:10px;font:13px Arial,sans-serif">Organizer save key</label>
-<input id="sheetKey" type="password" placeholder="Enter your private organizer key" style="width:100%;padding:11px;border:1px solid #d7cebf;border-radius:8px;margin-top:5px">
-<div class="hint">These are entered by the organizer only. Do not share the key. The results spreadsheet remains private.</div>
-</div>
+<div class="notice" style="margin-top:14px"><b>Google Sheets backup</b><br>Draw results are automatically sent to the organizer's private spreadsheet when you generate the draw. No password is needed.</div>
 <div class="actions"><button onclick="makeDraw()">Generate private links</button><button class="secondary" onclick="resetDraw()">Reset</button></div>
 <div id="error"></div>
 <div id="drawAnimation"><div class="label">Shuffling all names</div><div id="rollingName">🎄 Mixing the draw…</div><div class="bar"><span id="progressBar"></span></div><div class="hint" style="color:#e7eee8">Creating a fresh random assignment</div></div>
@@ -122,7 +115,7 @@ async function makeDraw(){
  generated=names.map((name,i)=>({name,recipient:recipients[i]}));
  const base=location.href.split('#')[0];
  document.getElementById('links').innerHTML=generated.map((p,i)=>{
-   const url=base+'#gift='+encode(p.recipient);
+   const url=base+'#gift='+encode(JSON.stringify({recipient:p.recipient,pool:names}));
    return `<div class="linkrow" style="animation-delay:${Math.min(i*45,650)}ms"><b>${esc(p.name)}</b><input readonly value="${esc(url)}" id="link${i}"><button onclick="copyLink(${i})">Copy</button></div>`;
  }).join('');
  rolling.textContent='✨ The draw is complete!';
@@ -132,12 +125,10 @@ async function makeDraw(){
  document.getElementById('results').scrollIntoView({behavior:'smooth'});
 }
 async function saveResultsToSheet(){
- const endpoint=document.getElementById('sheetEndpoint').value.trim();
- const key=document.getElementById('sheetKey').value.trim();
+ const endpoint='https://script.google.com/macros/s/AKfycbx6-sDoLsfpsJd7_rKfUpfpESP_DV4_DRR8qCJG4BLiEl6lTsejUxmjIsY0ubOntYe78A/exec';
  const status=document.getElementById('sheetStatus');
  status.style.display='block';
- if(!endpoint||!key){status.textContent='Draw created, but not saved to Google Sheets. Enter the Web App URL and organizer key before generating the draw to save the proof.';return;}
- const payload={key:key,drawId:'DRAW-'+Date.now(),drawnAt:new Date().toISOString(),assignments:generated};
+ const payload={drawId:'DRAW-'+Date.now(),drawnAt:new Date().toISOString(),assignments:generated};
  try{
    await fetch(endpoint,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
    status.textContent='Save request sent to your private Google Sheet. Since Google Apps Script uses a cross-origin response, this page cannot read the confirmation. Check the “Draw Results” tab in your spreadsheet.';
@@ -145,7 +136,7 @@ async function saveResultsToSheet(){
 }
 function copyLink(i){const el=document.getElementById('link'+i);el.select();el.setSelectionRange(0,99999);navigator.clipboard?.writeText(el.value).then(()=>alert('Link copied for '+generated[i].name)).catch(()=>alert('Select and copy the link manually.'));}
 function downloadCSV(){
- const rows=[['Participant','Private link'],...generated.map(p=>[p.name,location.href.split('#')[0]+'#gift='+encode(p.recipient)])];
+ const rows=[['Participant','Private link'],...generated.map(p=>[p.name,location.href.split('#')[0]+'#gift='+encode(JSON.stringify({recipient:p.recipient,pool:generated.map(x=>x.name)}))])];
  const csv=rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='secret-santa-private-links.csv';a.click();URL.revokeObjectURL(a.href);
 }
@@ -155,18 +146,29 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
  const m=location.hash.match(/^#gift=(.+)$/);
  if(m){
    try{
-     const who=decode(m[1]);
+     const decoded=decode(m[1]);
+     // New links carry the exact saved recipient plus the roster used for the visual shuffle.
+     // Older links containing only a recipient remain supported.
+     let payload;
+     try { payload=JSON.parse(decoded); } catch (_) { payload={recipient:decoded,pool:[]}; }
+     const who=String(payload.recipient || '').trim();
+     const pool=Array.isArray(payload.pool) ? payload.pool.map(x=>String(x).trim()).filter(Boolean) : [];
+     if(!who) throw new Error('Missing recipient');
      document.getElementById('organizer').style.display='none';
      document.getElementById('reveal').style.display='block';
      const rolling=document.getElementById('revealRolling');
      const bar=document.getElementById('revealProgress');
      const animation=document.getElementById('revealAnimation');
      const recipient=document.getElementById('recipient');
-     const phrases=['🎄 Mixing the magic…','🎁 Choosing your surprise…','✨ Almost time to reveal…'];
-     const start=Date.now(), duration=2800;
+     const namesToShuffle=pool.length ? pool : ['🎄 Secret Santa','🎁 Christmas surprise','✨ Your mystery gift'];
+     const start=Date.now(), duration=3200;
+     let lastIndex=-1;
      const timer=setInterval(()=>{
        const progress=Math.min(100,(Date.now()-start)/duration*100);
-       rolling.textContent=phrases[Math.floor(Math.random()*phrases.length)];
+       let index=Math.floor(Math.random()*namesToShuffle.length);
+       if(namesToShuffle.length>1 && index===lastIndex) index=(index+1)%namesToShuffle.length;
+       lastIndex=index;
+       rolling.textContent=namesToShuffle[index]+' 🎁';
        bar.style.width=progress+'%';
        if(progress>=100){
          clearInterval(timer);
@@ -176,7 +178,7 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
          recipient.style.display='block';
          document.getElementById('keepSecret').style.display='block';
        }
-     },120);
+     },100);
    }catch(e){
      document.getElementById('organizer').style.display='none';
      document.getElementById('reveal').style.display='block';
