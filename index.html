@@ -15,6 +15,12 @@ button{border:0;border-radius:10px;padding:14px 18px;background:var(--green);col
 #results{display:none;margin-top:24px;border-top:1px solid #e8dfd2;padding-top:18px}.links{display:grid;gap:9px}.linkrow{display:grid;grid-template-columns:120px 1fr auto;align-items:center;gap:8px;background:#f4f5ef;padding:10px;border-radius:9px;font:13px Arial,sans-serif}.linkrow input{width:100%;min-width:0;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:12px}
 #error{display:none;color:#9b2525;background:#fff0ef;padding:11px;border-radius:8px;font:13px Arial,sans-serif;margin-top:12px}
 .result{display:none;text-align:center;padding:28px 12px}.result .to{font-size:clamp(30px,8vw,44px);color:var(--red);margin:18px 0}.result p{font:14px/1.6 Arial,sans-serif;color:#65736a}
+#revealAnimation{margin:24px auto 10px;max-width:390px;padding:22px;border-radius:16px;background:linear-gradient(135deg,#173f31,#245b43);color:#fff}
+#revealAnimation .label{font:12px Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;color:#e8d49c}
+#revealRolling{font-size:25px;font-weight:bold;margin:18px 0;min-height:34px}
+#revealBar{height:5px;background:#ffffff35;border-radius:9px;overflow:hidden}
+#revealBar span{display:block;height:100%;width:0;background:#e6c36f;transition:width .12s linear}
+#recipient{display:none}
 footer{text-align:center;margin-top:24px;font:11px Arial,sans-serif;color:#8b928c}
 #drawAnimation{display:none;margin-top:20px;padding:18px;border-radius:14px;background:linear-gradient(135deg,#173f31,#245b43);color:#fff;text-align:center}
 #drawAnimation .label{font:12px Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;color:#e8d49c}
@@ -66,7 +72,9 @@ Jafar</textarea>
 </section>
 
 <section id="reveal" class="result">
-<div class="icon">🎁</div><h1>Your Secret Santa recipient is…</h1><div class="to" id="recipient"></div><p>Keep it secret! Don't share this page or screenshot with the group. 🤫</p>
+<div class="icon">🎁</div><h1>Your Secret Santa draw is ready!</h1>
+<div id="revealAnimation"><div class="label">Your Secret Santa is being revealed</div><div id="revealRolling">🎄 Unwrapping your surprise…</div><div id="revealBar"><span id="revealProgress"></span></div></div>
+<div class="to" id="recipient"></div><p id="keepSecret" style="display:none">Keep it secret! Don't share this page or screenshot with the group. 🤫</p>
 </section>
 <footer>Made for a merry little gift exchange ❤️</footer>
 </main>
@@ -145,7 +153,37 @@ function resetDraw(){generated=[];document.getElementById('results').style.displ
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 (function(){
  const m=location.hash.match(/^#gift=(.+)$/);
- if(m){try{const who=decode(m[1]);document.getElementById('organizer').style.display='none';document.getElementById('reveal').style.display='block';document.getElementById('recipient').textContent=who;}catch(e){showError('This reveal link is invalid. Ask the organizer for a new link.');}}
+ if(m){
+   try{
+     const who=decode(m[1]);
+     document.getElementById('organizer').style.display='none';
+     document.getElementById('reveal').style.display='block';
+     const rolling=document.getElementById('revealRolling');
+     const bar=document.getElementById('revealProgress');
+     const animation=document.getElementById('revealAnimation');
+     const recipient=document.getElementById('recipient');
+     const phrases=['🎄 Mixing the magic…','🎁 Choosing your surprise…','✨ Almost time to reveal…'];
+     const start=Date.now(), duration=2800;
+     const timer=setInterval(()=>{
+       const progress=Math.min(100,(Date.now()-start)/duration*100);
+       rolling.textContent=phrases[Math.floor(Math.random()*phrases.length)];
+       bar.style.width=progress+'%';
+       if(progress>=100){
+         clearInterval(timer);
+         animation.style.display='none';
+         document.querySelector('#reveal h1').textContent='Your Secret Santa recipient is…';
+         recipient.textContent=who;
+         recipient.style.display='block';
+         document.getElementById('keepSecret').style.display='block';
+       }
+     },120);
+   }catch(e){
+     document.getElementById('organizer').style.display='none';
+     document.getElementById('reveal').style.display='block';
+     document.getElementById('revealAnimation').style.display='none';
+     document.getElementById('reveal').innerHTML='<h1>Invalid reveal link</h1><p>Please ask the organizer for a new link.</p>';
+   }
+ }
 })();
 </script>
 </body></html>
