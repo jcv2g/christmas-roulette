@@ -16,6 +16,13 @@ button{border:0;border-radius:10px;padding:14px 18px;background:var(--green);col
 #error{display:none;color:#9b2525;background:#fff0ef;padding:11px;border-radius:8px;font:13px Arial,sans-serif;margin-top:12px}
 .result{display:none;text-align:center;padding:28px 12px}.result .to{font-size:clamp(30px,8vw,44px);color:var(--red);margin:18px 0}.result p{font:14px/1.6 Arial,sans-serif;color:#65736a}
 footer{text-align:center;margin-top:24px;font:11px Arial,sans-serif;color:#8b928c}
+#drawAnimation{display:none;margin-top:20px;padding:18px;border-radius:14px;background:linear-gradient(135deg,#173f31,#245b43);color:#fff;text-align:center}
+#drawAnimation .label{font:12px Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;color:#e8d49c}
+#rollingName{font-size:clamp(24px,6vw,34px);font-weight:bold;margin:14px 0;min-height:42px}
+#drawAnimation .bar{height:5px;background:#ffffff35;border-radius:9px;overflow:hidden;margin-top:15px}
+#drawAnimation .bar span{display:block;height:100%;width:0;background:#e6c36f;transition:width .15s linear}
+.linkrow{animation:appear .45s ease both}
+@keyframes appear{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:520px){.linkrow{grid-template-columns:1fr}.linkrow input{font-size:11px}}
 </style>
 </head>
@@ -43,10 +50,19 @@ Noezel
 Sep
 She
 Jafar</textarea>
+<div class="notice" style="margin-top:14px">
+<b>Organizer-only results backup</b><br>
+<label style="display:block;margin-top:10px;font:13px Arial,sans-serif">Google Apps Script Web App URL</label>
+<input id="sheetEndpoint" type="url" value="https://script.google.com/macros/s/AKfycbx6-sDoLsfpsJd7_rKfUpfpESP_DV4_DRR8qCJG4BLiEl6lTsejUxmjIsY0ubOntYe78A/exec" placeholder="Paste your Apps Script Web App URL" style="width:100%;padding:11px;border:1px solid #d7cebf;border-radius:8px;margin-top:5px">
+<label style="display:block;margin-top:10px;font:13px Arial,sans-serif">Organizer save key</label>
+<input id="sheetKey" type="password" placeholder="Enter your private organizer key" style="width:100%;padding:11px;border:1px solid #d7cebf;border-radius:8px;margin-top:5px">
+<div class="hint">These are entered by the organizer only. Do not share the key. The results spreadsheet remains private.</div>
+</div>
 <div class="actions"><button onclick="makeDraw()">Generate private links</button><button class="secondary" onclick="resetDraw()">Reset</button></div>
 <div id="error"></div>
-<div id="results"><h2>Share each person’s link privately</h2><p class="hint">Copy each link and send it only to the matching participant.</p><div id="links" class="links"></div><div class="actions"><button onclick="downloadCSV()">Download links as CSV</button></div></div>
-<div class="notice"><b>Important privacy note:</b> This is a no-backend, static website. Each link contains only that person's recipient, so don't post the links in a group chat. Anyone who receives or forwards a link can see that assignment. The draw is generated in your browser; no participant database or reveal tracking is stored.</div>
+<div id="drawAnimation"><div class="label">Shuffling all names</div><div id="rollingName">🎄 Mixing the draw…</div><div class="bar"><span id="progressBar"></span></div><div class="hint" style="color:#e7eee8">Creating a fresh random assignment</div></div>
+<div id="results"><h2>Share each person’s link privately</h2><p class="hint">Copy each link and send it only to the matching participant.</p><div id="links" class="links"></div><div id="sheetStatus" class="notice" style="display:none"></div><div class="actions"><button onclick="downloadCSV()">Download links as CSV</button></div></div>
+<div class="notice"><b>Important privacy note:</b> This is a no-backend, static website. Each link contains only that person's recipient, so don't post the links in a group chat. Anyone who receives or forwards a link can see that assignment. The draw is generated in your browser using a randomized shuffle with self-matches rejected; no participant database or reveal tracking is stored.</div>
 </section>
 
 <section id="reveal" class="result">
@@ -59,23 +75,64 @@ let generated=[];
 function encode(s){return btoa(unescape(encodeURIComponent(s)));}
 function decode(s){return decodeURIComponent(escape(atob(s)));}
 function showError(msg){const e=document.getElementById('error');e.textContent=msg;e.style.display='block';}
-function makeDraw(){
+async function makeDraw(){
  const e=document.getElementById('error');e.style.display='none';
+ const button=document.querySelector('#organizer .actions button');
  const names=document.getElementById('names').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
  const normalized=names.map(x=>x.toLocaleLowerCase());
  if(names.length<2){showError('Enter at least two participants.');return;}
  if(new Set(normalized).size!==names.length){showError('Participant names must be unique. Check for duplicates.');return;}
- // Sattolo shuffle produces one cycle: no self-matches and each recipient appears exactly once.
- const recipients=names.slice();
- for(let i=recipients.length-1;i>0;i--){const j=Math.floor(Math.random()*i);[recipients[i],recipients[j]]=[recipients[j],recipients[i]];}
+ button.disabled=true;
+ document.getElementById('results').style.display='none';
+ const anim=document.getElementById('drawAnimation'); anim.style.display='block';
+ const rolling=document.getElementById('rollingName'), bar=document.getElementById('progressBar');
+ const shuffleDisplay=names.slice();
+ // Uniform random permutation, rejecting any draw with a self-match.
+ let recipients, attempts=0;
+ do {
+   recipients=names.slice();
+   for(let i=recipients.length-1;i>0;i--){
+     const j=Math.floor(Math.random()*(i+1));
+     [recipients[i],recipients[j]]=[recipients[j],recipients[i]];
+   }
+   attempts++;
+ } while(recipients.some((person,i)=>person.toLocaleLowerCase()===normalized[i]) && attempts<10000);
+ if(attempts>=10000){button.disabled=false;anim.style.display='none';showError('Unable to create a valid draw. Please try again.');return;}
+ await new Promise(resolve=>{
+   const started=Date.now(), duration=2600;
+   const timer=setInterval(()=>{
+     const progress=Math.min(100,(Date.now()-started)/duration*100);
+     for(let i=shuffleDisplay.length-1;i>0;i--){
+       const j=Math.floor(Math.random()*(i+1));
+       [shuffleDisplay[i],shuffleDisplay[j]]=[shuffleDisplay[j],shuffleDisplay[i]];
+     }
+     rolling.textContent=shuffleDisplay[Math.floor(Math.random()*shuffleDisplay.length)]+' 🎁';
+     bar.style.width=progress+'%';
+     if(progress>=100){clearInterval(timer);resolve();}
+   },90);
+ });
  generated=names.map((name,i)=>({name,recipient:recipients[i]}));
  const base=location.href.split('#')[0];
  document.getElementById('links').innerHTML=generated.map((p,i)=>{
    const url=base+'#gift='+encode(p.recipient);
-   return `<div class="linkrow"><b>${esc(p.name)}</b><input readonly value="${esc(url)}" id="link${i}"><button onclick="copyLink(${i})">Copy</button></div>`;
+   return `<div class="linkrow" style="animation-delay:${Math.min(i*45,650)}ms"><b>${esc(p.name)}</b><input readonly value="${esc(url)}" id="link${i}"><button onclick="copyLink(${i})">Copy</button></div>`;
  }).join('');
- document.getElementById('results').style.display='block';
+ rolling.textContent='✨ The draw is complete!';
+ document.getElementById('results').style.display='block';\n saveResultsToSheet();
+ button.disabled=false;
  document.getElementById('results').scrollIntoView({behavior:'smooth'});
+}
+async function saveResultsToSheet(){
+ const endpoint=document.getElementById('sheetEndpoint').value.trim();
+ const key=document.getElementById('sheetKey').value.trim();
+ const status=document.getElementById('sheetStatus');
+ status.style.display='block';
+ if(!endpoint||!key){status.textContent='Draw created, but not saved to Google Sheets. Enter the Web App URL and organizer key before generating the draw to save the proof.';return;}
+ const payload={key:key,drawId:'DRAW-'+Date.now(),drawnAt:new Date().toISOString(),assignments:generated};
+ try{
+   await fetch(endpoint,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
+   status.textContent='Save request sent to your private Google Sheet. Since Google Apps Script uses a cross-origin response, this page cannot read the confirmation. Check the “Draw Results” tab in your spreadsheet.';
+ }catch(err){status.textContent='The draw is ready, but the save request could not be sent. Check your Apps Script Web App URL and internet connection.';}
 }
 function copyLink(i){const el=document.getElementById('link'+i);el.select();el.setSelectionRange(0,99999);navigator.clipboard?.writeText(el.value).then(()=>alert('Link copied for '+generated[i].name)).catch(()=>alert('Select and copy the link manually.'));}
 function downloadCSV(){
